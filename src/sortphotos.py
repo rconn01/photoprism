@@ -27,7 +27,7 @@ import locale
 # Setting locale to the 'local' value
 locale.setlocale(locale.LC_ALL, '')
 
-exiftool_location = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Image-ExifTool', 'exiftool')
+exiftool_location = "/opt/homebrew/bin/exiftool" #os.path.join(os.path.dirname(os.path.realpath(__file__)), 'Image-ExifTool', 'exiftool')
 
 
 # -------- convenience methods -------------
@@ -228,7 +228,7 @@ class ExifTool(object):
 def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
         copy_files=False, test=False, remove_duplicates=True, day_begins=0,
         additional_groups_to_ignore=['File'], additional_tags_to_ignore=[],
-        use_only_groups=None, use_only_tags=None, verbose=True, keep_filename=False):
+        use_only_groups=None, use_only_tags=None, verbose=True, keep_filename=False, extensions=None):
     """
     This function is a convenience wrapper around ExifTool based on common usage scenarios for sortphotos.py
 
@@ -268,6 +268,8 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
         a list of tags that will be exclusived searched across for date info
     verbose : bool
         True if you want to see details of file processing
+    extension: list(str)
+        a list of fil extensions to process for dates
 
     """
 
@@ -294,6 +296,10 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
         args += ['-time:all']
 
 
+    if extensions:
+        for ext in extensions:
+            args += ['-ext',ext]
+
     if recursive:
         args += ['-r']
 
@@ -303,6 +309,7 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
     # get all metadata
     with ExifTool(verbose=verbose) as e:
         print('Preprocessing with ExifTool.  May take a while for a large number of files.')
+        print(str(args))
         sys.stdout.flush()
         metadata = e.get_metadata(*args)
 
@@ -417,22 +424,33 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
             else:
                 break
 
+        dest_root,dest_ext = os.path.splitext(dest_file)
+        src_root, src_ext = os.path.splitext(src_file)
 
-        # finally move or copy the file
-        if test:
-            test_file_dict[dest_file] = src_file
+        for ext in [src_ext,".mov","O.aae",".aae"]:
+            src_to_move = src_root + ext
+            dest_to_move = dest_root + ext
+            dest_to_move = dest_to_move.replace("O.aae",".aae")
 
-        else:
+            if os.path.isfile(src_to_move):
+                # finally move or copy the file
+                if test:
+                    test_file_dict[dest_to_move] = src_to_move
 
-            if fileIsIdentical:
-                continue  # ignore identical files
-            else:
-                if copy_files:
-                    shutil.copy2(src_file, dest_file)
                 else:
-                    shutil.move(src_file, dest_file)
 
+                    if fileIsIdentical and os.path.isfile(dest_to_move):
+                        #newpath = os.path.join(os.path.dirname(src_to_move), "duplicates", os.path.basename(src_to_move))
+                        #shutil.move(src_to_move, newpath)
+                        continue  # ignore identical files
+                    else:
+                        print("Moving " + src_to_move)
+                        if copy_files:
+                            shutil.copy2(src_to_move, dest_to_move)
+                        else:
+                            shutil.move(src_to_move, dest_to_move)
 
+        checkaae(src_file,dest_file)                        
 
         if verbose:
             print()
@@ -441,6 +459,22 @@ def sortPhotos(src_dir, dest_dir, sort_format, rename_format, recursive=False,
 
     if not verbose:
         print()
+
+def checkaae(src_file, dest_file):
+    src_root, src_ext = os.path.splitext(src_file)
+    dest_root,dest_ext = os.path.splitext(dest_file)
+    basename=os.path.basename(src_root)
+    path=os.path.dirname(src_root)
+    if "_" in basename:
+        one,two=basename.split('_',1)
+        filename=one + '_O' + two + '.aae'
+        aae=os.path.join(path,filename)
+
+        if os.path.exists(aae):
+            newLoc = dest_root+'.aae'       
+            print("Moving "+ aae + " to " + newLoc)
+            shutil.move(aae, newLoc)
+
 
 
 def main():
@@ -491,13 +525,16 @@ def main():
                     help='specify a restricted set of tags to search for date information\n\
     e.g., EXIF:CreateDate')
 
+    parser.add_argument('--extensions', type=str, nargs='+', default=None,
+                    help='List of explict extensions to process for dates')
+
     # parse command line arguments
     args = parser.parse_args()
 
     sortPhotos(args.src_dir, args.dest_dir, args.sort, args.rename, args.recursive,
         args.copy, args.test, not args.keep_duplicates, args.day_begins,
         args.ignore_groups, args.ignore_tags, args.use_only_groups,
-        args.use_only_tags, not args.silent, args.keep_filename)
+        args.use_only_tags, not args.silent, args.keep_filename, args.extensions)
 
 if __name__ == '__main__':
     main()
